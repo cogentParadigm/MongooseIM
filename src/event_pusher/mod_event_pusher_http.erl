@@ -56,18 +56,26 @@ stop(_Host) ->
     ok.
 
 push_event(Acc, _Host, #chat_event{direction = Dir, from = From, to = To, packet = Packet}) ->
+    ?INFO_MSG("push_event received from ~s to ~s", [
+        jid:to_binary(From),
+        jid:to_binary(To)
+    ]),
     lists:map(fun(Opts) -> push_event(Acc, Dir, From, To, Packet, Opts) end,
-              gen_mod:get_module_opt(From#jid.lserver, ?MODULE, configs, [])),
+              gen_mod:get_module_opt(To#jid.lserver, ?MODULE, configs, [])),
     Acc;
 push_event(Acc, _Host, _Event) ->
     Acc.
 
 push_event(Acc, Dir, From, To, Packet, Opts) ->
+    ?INFO_MSG("push_event validated from ~s to ~s", [
+        jid:to_binary(From),
+        jid:to_binary(To)
+    ]),
     Body = exml_query:path(Packet, [{element, <<"body">>}, cdata], <<>>),
     Mod = get_callback_module(Opts),
     case Mod:should_make_req(Acc, Dir, Packet, From, To, Opts) of
         true ->
-            make_req(Acc, Dir, From#jid.lserver, From#jid.luser, To#jid.luser, Body, Opts);
+            make_req(Acc, Dir, To#jid.lserver, From, To#jid.luser, Body, Opts);
         _ ->
             ok
     end,
@@ -86,7 +94,7 @@ make_req(Acc, Dir, Host, Sender, Receiver, Message, Opts) ->
     Mod = get_callback_module(Opts),
     Body = Mod:prepare_body(Acc, Dir, Host, Message, Sender, Receiver, Opts),
     Headers = Mod:prepare_headers(Acc, Dir, Host, Message, Sender, Receiver, Opts),
-    ?INFO_MSG("Making request '~p' for user ~s@~s...", [Path, Sender, Host]),
+    ?INFO_MSG("Making request '~p' for user ~s@~s...", [Path, jid:to_binary(Sender), Host]),
     T0 = os:timestamp(),
     {Res, Elapsed} = case mongoose_http_client:post(Host, PoolName, Path, Headers, Body) of
                          {ok, _} ->
